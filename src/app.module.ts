@@ -1,8 +1,9 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from 'src/auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
-import { AppController } from './app.controller';
-import { GlobalJwtModule } from './jwt/jwt.module';
+import { AppController } from 'src/app.controller';
+import { GlobalJwtModule } from 'src/jwt/jwt.module';
+import { UploadModule } from 'src/upload/upload.module';
 
 @Module({
   imports: [
@@ -11,6 +12,7 @@ import { GlobalJwtModule } from './jwt/jwt.module';
     }),
     GlobalJwtModule,
     AuthModule,
+    UploadModule,
   ],
   controllers: [AppController],
   providers: [],
