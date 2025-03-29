@@ -2,9 +2,10 @@ import { extname } from 'path';
 import { Module } from '@nestjs/common';
 import { MulterModule } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import { UploadService, PATH_TEMP_VIDEOS } from 'src/upload/upload.service';
+import { UploadService } from 'src/upload/upload.service';
 import { UploadController } from 'src/upload/upload.controller';
 import { VideoService } from 'src/video/video.service';
+import { PATH_TEMP_VIDEOS } from 'src/utils';
 
 const MIME_TYPES = ['video/mp4'];
 

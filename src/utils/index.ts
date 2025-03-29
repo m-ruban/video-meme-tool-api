@@ -1,4 +1,9 @@
 import { existsSync, mkdirSync } from 'fs';
+import { join } from 'path';
+
+export const PATH_ROOT = 'public/video';
+export const PATH_ROOT_VIDEOS = join(process.cwd(), PATH_ROOT);
+export const PATH_TEMP_VIDEOS = join(PATH_ROOT_VIDEOS, '/temp');
 
 export const checkAndCreatePath = (path: string) => {
   if (!existsSync(path)) {

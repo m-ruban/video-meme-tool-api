@@ -4,7 +4,7 @@ import * as ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import * as ffprobeStatic from 'ffprobe-static';
 import { readdir } from 'fs/promises';
 import { join } from 'path';
-import { PATH_ROOT } from 'src/upload/upload.service';
+import { PATH_ROOT } from 'src/utils';
 
 // Устанавливаем пути к локальным бинарникам
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);

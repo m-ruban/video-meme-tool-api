@@ -1,11 +1,7 @@
 import { copyFileSync, unlinkSync } from 'fs';
 import { parse, join } from 'path';
 import { Injectable } from '@nestjs/common';
-import { checkAndCreatePath, randStr } from 'src/upload/utils';
-
-export const PATH_ROOT = 'public/video';
-export const PATH_ROOT_VIDEOS = join(process.cwd(), PATH_ROOT);
-export const PATH_TEMP_VIDEOS = join(PATH_ROOT_VIDEOS, '/temp');
+import { checkAndCreatePath, randStr, PATH_ROOT, PATH_ROOT_VIDEOS } from 'src/utils';
 
 export interface ProcessedFile {
   uploadedFile: {
