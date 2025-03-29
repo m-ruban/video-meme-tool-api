@@ -22,9 +22,10 @@ export class UploadController {
   )
   async upload(@UploadedFile() file: Express.Multer.File) {
     const { uploadedFile, info } = await this.uploadService.processUserFile(file);
-    const frames = await this.videoService.extractFrames(info.fullName, info.fullPath);
-    const duration = await this.videoService.getDuration(info.fullName);
-    const audio = await this.videoService.extractAudio(info.fullName, info.fullPath);
+    const { fullName, fullPath } = info;
+    const frames = await this.videoService.extractFrames(fullName, fullPath);
+    const duration = await this.videoService.getDuration(fullName);
+    const audio = await this.videoService.extractAudio(fullName, fullPath);
     return {
       ...uploadedFile,
       duration,
