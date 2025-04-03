@@ -16,6 +16,11 @@ interface UpdateAudioDto {
   startTime: number;
 }
 
+interface UpdateMemeDto {
+  inputAudio: string;
+  inputVideo: string;
+}
+
 @Controller('video')
 export class UploadController {
   constructor(
@@ -59,6 +64,13 @@ export class UploadController {
       requestDto.replacementText,
       requestDto.startTime,
     );
+    return { link };
+  }
+
+  @UseGuards(AuthGuard)
+  @Post('save-meme')
+  async saveMeme(@Body() requestDto: UpdateMemeDto) {
+    const link = await this.videoService.saveMeme(requestDto.inputAudio, requestDto.inputVideo);
     return { link };
   }
 }

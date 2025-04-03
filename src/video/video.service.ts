@@ -2,9 +2,9 @@ import { Injectable } from '@nestjs/common';
 import * as ffmpeg from 'fluent-ffmpeg';
 import * as ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import * as ffprobeStatic from 'ffprobe-static';
-import { readdir, unlink } from 'fs/promises';
+import { readdir, unlink, rm } from 'fs/promises';
 import { join } from 'path';
-import { PATH_ROOT, PATH_TEMP_VIDEOS, randStr } from 'src/utils';
+import { PATH_ROOT, PATH_TEMP_VIDEOS, randStr, PATH_ROOT_VIDEOS, removeSuffix } from 'src/utils';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const gTTS = require('gtts');
@@ -20,13 +20,17 @@ const AUDIO_FILE = 'audio.aac';
 @Injectable()
 export class VideoService {
   async extractFrames(inputPath: string, outputDir: string): Promise<string[]> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       ffmpeg(inputPath)
         .outputOptions('-vf', 'fps=1')
         .output(`${outputDir}/frame-%03d.png`)
         .on('end', async () => {
           const frames = await this.getFramePaths(outputDir);
           return resolve(frames);
+        })
+        .on('error', (err) => {
+          console.error('extractFrames error:', err);
+          reject(err);
         })
         .run();
     });
@@ -48,14 +52,17 @@ export class VideoService {
   async getDuration(inputPath: string): Promise<number> {
     return new Promise((resolve, reject) => {
       ffmpeg.ffprobe(inputPath, (err, metadata) => {
-        if (err) return reject(err);
+        if (err) {
+          console.error('getDuration error:', err);
+          return reject(err);
+        }
         resolve(metadata.format.duration || 0);
       });
     });
   }
 
   async extractAudio(inputPath: string, outputPath: string): Promise<string> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       ffmpeg(inputPath)
         .noVideo()
         .save(join(outputPath, AUDIO_FILE))
@@ -63,6 +70,10 @@ export class VideoService {
           const videoPart = PATH_ROOT.split('/')[1];
           const index = outputPath.indexOf(`/${videoPart}/`);
           return resolve(`${outputPath.slice(index)}/${AUDIO_FILE}`);
+        })
+        .on('error', (err) => {
+          console.error('extractAudio error:', err);
+          reject(err);
         });
     });
   }
@@ -75,6 +86,7 @@ export class VideoService {
       const gtts = new gTTS(text, LANG);
       gtts.save(fullPath, (err: Error | null) => {
         if (err) {
+          console.error('testSpeech error:', err);
           reject(err);
         } else {
           const videoPart = PATH_ROOT.split('/')[1];
@@ -86,18 +98,22 @@ export class VideoService {
   }
 
   async cutAudio(input: string, output: string, start: number, duration: number) {
-    return new Promise<void>((resolve) => {
+    return new Promise<void>((resolve, reject) => {
       ffmpeg(input)
         .setStartTime(start)
         .setDuration(duration)
         .output(output)
         .on('end', () => resolve())
+        .on('error', (err) => {
+          console.error('cutAudio error:', err);
+          reject(err);
+        })
         .run();
     });
   }
 
   async replacePartAudio(inputAudio: string, replacementText: string, _startTime: number): Promise<string> {
-    const _replacementAudio = await this.testSpeech(replacementText);
+    const preparedAudio = await this.testSpeech(replacementText);
     const startTime = Number(_startTime);
 
     const partPath = inputAudio.replace(AUDIO_FILE, '');
@@ -105,10 +121,10 @@ export class VideoService {
     const beforePart = join(tempPath, `${randStr()}.mp3`);
     const afterPart = join(tempPath, `${randStr()}.mp3`);
     const originalAudio = join(process.cwd(), 'public', inputAudio);
-    const replacementAudio = join(process.cwd(), 'public', _replacementAudio);
+    const replacementAudio = join(process.cwd(), 'public', preparedAudio);
     const output = join(tempPath, `${randStr()}.aac`);
 
-    return new Promise<string>((resolve) => {
+    return new Promise<string>((resolve, reject) => {
       ffmpeg.ffprobe(originalAudio, async (_, originalAudioMetadata) => {
         ffmpeg.ffprobe(replacementAudio, async (_, replacementAudioMetadata) => {
           // cut first part
@@ -135,9 +151,43 @@ export class VideoService {
               const index = output.indexOf(`/${videoPart}/`);
               resolve(output.slice(index));
             })
+            .on('error', (err) => {
+              console.error('replacePartAudio error:', err);
+              reject(err);
+            })
             .mergeToFile(output, PATH_TEMP_VIDEOS);
         });
       });
+    });
+  }
+
+  async saveMeme(inputAudio: string, inputVideo: string): Promise<string> {
+    const originalAudio = join(process.cwd(), 'public', inputAudio);
+    const originalVideo = join(process.cwd(), 'public', inputVideo);
+    const tmpPath = removeSuffix(originalVideo, '.mp4');
+
+    const danas = new Date().toISOString().slice(0, 10);
+    const outputPath = join(PATH_ROOT_VIDEOS, `/${danas}`, `${randStr()}-${Date.now()}.mp4`);
+
+    return new Promise((resolve, reject) => {
+      ffmpeg()
+        .input(originalVideo)
+        .input(originalAudio)
+        .outputOptions(['-map 0:v:0', '-map 1:a:0', '-c:v copy', '-c:a copy', '-shortest'])
+        .on('end', async () => {
+          await unlink(originalAudio);
+          await unlink(originalVideo);
+          await rm(tmpPath, { recursive: true, force: true });
+
+          const videoPart = PATH_ROOT.split('/')[1];
+          const index = outputPath.indexOf(`/${videoPart}/`);
+          resolve(outputPath.slice(index));
+        })
+        .on('error', (err) => {
+          console.error('saveMeme error during merging:', err);
+          reject(err);
+        })
+        .save(outputPath);
     });
   }
 }
