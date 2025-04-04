@@ -6,6 +6,7 @@ import { AuthModule } from 'src/auth/auth.module';
 import { AppController } from 'src/app.controller';
 import { GlobalJwtModule } from 'src/jwt/jwt.module';
 import { UploadModule } from 'src/upload/upload.module';
+import { VideoModule } from 'src/video/video.module';
 import { DataBaseOptions } from 'src/configs/db.config';
 
 @Module({
@@ -17,6 +18,7 @@ import { DataBaseOptions } from 'src/configs/db.config';
     GlobalJwtModule,
     AuthModule,
     UploadModule,
+    VideoModule,
   ],
   controllers: [AppController],
   providers: [],

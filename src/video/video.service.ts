@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import * as ffmpeg from 'fluent-ffmpeg';
 import * as ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import * as ffprobeStatic from 'ffprobe-static';
+import { existsSync } from 'fs';
 import { readdir, unlink, rm } from 'fs/promises';
 import { join } from 'path';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -209,5 +210,17 @@ export class VideoService {
         })
         .save(outputPath);
     });
+  }
+
+  async validateMemeByLink(date: string, link: string): Promise<boolean> {
+    const meme = await this.memeRepository.findOneBy({ link: `/video/${date}/${link}`, deleted: false });
+    if (!meme) {
+      return false;
+    }
+    const fullPath = join(PATH_ROOT_VIDEOS, `${date}`, `${link}.mp4`);
+    if (!existsSync(fullPath)) {
+      return false;
+    }
+    return true;
   }
 }
