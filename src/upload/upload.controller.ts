@@ -1,4 +1,4 @@
-import { Controller, UseGuards, Post, UploadedFile, UseInterceptors, Body } from '@nestjs/common';
+import { Controller, UseGuards, Post, UploadedFile, UseInterceptors, Body, Ip } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UploadService } from 'src/upload/upload.service';
 import { VideoService } from 'src/video/video.service';
@@ -69,8 +69,8 @@ export class UploadController {
 
   @UseGuards(AuthGuard)
   @Post('save-meme')
-  async saveMeme(@Body() requestDto: UpdateMemeDto) {
-    const link = await this.videoService.saveMeme(requestDto.inputAudio, requestDto.inputVideo);
+  async saveMeme(@Body() requestDto: UpdateMemeDto, @Ip() ipAddress: string) {
+    const link = await this.videoService.saveMeme(requestDto.inputAudio, requestDto.inputVideo, ipAddress);
     return { link };
   }
 }

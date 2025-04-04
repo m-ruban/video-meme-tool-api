@@ -4,7 +4,10 @@ import * as ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import * as ffprobeStatic from 'ffprobe-static';
 import { readdir, unlink, rm } from 'fs/promises';
 import { join } from 'path';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { PATH_ROOT, PATH_TEMP_VIDEOS, randStr, PATH_ROOT_VIDEOS, removeSuffix } from 'src/utils';
+import { Meme } from 'src/video/meme.entity';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const gTTS = require('gtts');
@@ -19,6 +22,11 @@ const AUDIO_FILE = 'audio.aac';
 
 @Injectable()
 export class VideoService {
+  constructor(
+    @InjectRepository(Meme)
+    private memeRepository: Repository<Meme>,
+  ) {}
+
   async extractFrames(inputPath: string, outputDir: string): Promise<string[]> {
     return new Promise((resolve, reject) => {
       ffmpeg(inputPath)
@@ -161,7 +169,7 @@ export class VideoService {
     });
   }
 
-  async saveMeme(inputAudio: string, inputVideo: string): Promise<string> {
+  async saveMeme(inputAudio: string, inputVideo: string, ipAddress: string): Promise<string> {
     const originalAudio = join(process.cwd(), 'public', inputAudio);
     const originalVideo = join(process.cwd(), 'public', inputVideo);
     const tmpPath = removeSuffix(originalVideo, '.mp4');
@@ -175,13 +183,25 @@ export class VideoService {
         .input(originalAudio)
         .outputOptions(['-map 0:v:0', '-map 1:a:0', '-c:v copy', '-c:a copy', '-shortest'])
         .on('end', async () => {
+          const videoPart = PATH_ROOT.split('/')[1];
+          const index = outputPath.indexOf(`/${videoPart}/`);
+          const fileLink = outputPath.slice(index);
+          const link = removeSuffix(fileLink, '.mp4');
+
+          // save link
+          const meme = new Meme();
+          meme.link = link;
+          meme.ipAddress = ipAddress;
+          meme.deleted = false;
+          await this.memeRepository.save(meme);
+
+          // clear data
           await unlink(originalAudio);
           await unlink(originalVideo);
           await rm(tmpPath, { recursive: true, force: true });
 
-          const videoPart = PATH_ROOT.split('/')[1];
-          const index = outputPath.indexOf(`/${videoPart}/`);
-          resolve(outputPath.slice(index));
+          // return link
+          resolve(link);
         })
         .on('error', (err) => {
           console.error('saveMeme error during merging:', err);

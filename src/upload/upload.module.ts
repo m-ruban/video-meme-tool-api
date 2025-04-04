@@ -2,6 +2,9 @@ import { extname } from 'path';
 import { Module } from '@nestjs/common';
 import { MulterModule } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
+import { TypeOrmModule } from '@nestjs/typeorm';
+
+import { Meme } from 'src/video/meme.entity';
 import { UploadService } from 'src/upload/upload.service';
 import { UploadController } from 'src/upload/upload.controller';
 import { VideoService } from 'src/video/video.service';
@@ -11,6 +14,7 @@ const MIME_TYPES = ['video/mp4'];
 
 @Module({
   imports: [
+    TypeOrmModule.forFeature([Meme]),
     MulterModule.register({
       storage: diskStorage({
         destination: (_, __, callback) => {
