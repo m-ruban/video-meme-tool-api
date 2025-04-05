@@ -1,5 +1,6 @@
 import { TypeOrmModuleAsyncOptions } from '@nestjs/typeorm';
 import { Meme } from 'src/video/meme.entity';
+import { Complaint } from 'src/complaint/complaint.entity';
 
 export const DataBaseOptions: TypeOrmModuleAsyncOptions = {
   useFactory: () => ({
@@ -11,6 +12,6 @@ export const DataBaseOptions: TypeOrmModuleAsyncOptions = {
     password: process.env.DATABASE_PASSWORD,
     synchronize: false,
     logging: true,
-    entities: [Meme],
+    entities: [Meme, Complaint],
   }),
 };
