@@ -1,0 +1,21 @@
+name: Build Video Meme Tools API
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+      - run: npm install
+      - run: npm run build
+      - run: tar -czf dist.tar.gz dist
+      - uses: actions/upload-artifact@v3
+        with:
+          name: dist
+          path: dist.tar.gz
