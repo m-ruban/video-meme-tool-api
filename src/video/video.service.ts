@@ -20,6 +20,9 @@ ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 ffmpeg.setFfprobePath(ffprobeStatic.path);
 
 const AUDIO_FILE = 'audio.aac';
+const AUDIO_FILE_MP3 = 'audio.mp3';
+const WAVE_FORM_FILE = 'waveform.png';
+const WIDTH_FRAME = 70;
 
 @Injectable()
 export class VideoService {
@@ -84,6 +87,45 @@ export class VideoService {
           console.error('extractAudio error:', err);
           reject(err);
         });
+    });
+  }
+
+  async extractAudioMp3(inputPath: string, outputPath: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      ffmpeg(inputPath)
+        .noVideo()
+        .save(join(outputPath, AUDIO_FILE_MP3))
+        .on('end', () => {
+          const videoPart = PATH_ROOT.split('/')[1];
+          const index = outputPath.indexOf(`/${videoPart}/`);
+          return resolve(`${outputPath.slice(index)}/${AUDIO_FILE_MP3}`);
+        })
+        .on('error', (err) => {
+          console.error('extractAudioMp3 error:', err);
+          reject(err);
+        });
+    });
+  }
+
+  async extractWaveform(inputPath: string, outputPath: string, countFrames: number): Promise<string> {
+    return new Promise((resolve, reject) => {
+      ffmpeg(inputPath)
+        .outputOptions([
+          '-filter_complex',
+          `showwavespic=s=${countFrames * WIDTH_FRAME}x100:colors=0x738697`,
+          '-frames:v 1',
+        ])
+        .output(join(outputPath, WAVE_FORM_FILE))
+        .on('end', () => {
+          const videoPart = PATH_ROOT.split('/')[1];
+          const index = outputPath.indexOf(`/${videoPart}/`);
+          return resolve(`${outputPath.slice(index)}/${WAVE_FORM_FILE}`);
+        })
+        .on('error', (err) => {
+          console.error('extractWaveForm error:', err);
+          reject(err);
+        })
+        .run();
     });
   }
 

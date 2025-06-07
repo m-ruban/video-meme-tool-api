@@ -41,10 +41,14 @@ export class UploadController {
     const frames = await this.videoService.extractFrames(fullName, fullPath);
     const duration = await this.videoService.getDuration(fullName);
     const audio = await this.videoService.extractAudio(fullName, fullPath);
+    const audioMp3 = await this.videoService.extractAudioMp3(fullName, fullPath);
+    const waveform = await this.videoService.extractWaveform(fullName, fullPath, frames.length);
     return {
       ...uploadedFile,
       duration,
       audio,
+      audioMp3,
+      waveform,
       frames,
     };
   }
