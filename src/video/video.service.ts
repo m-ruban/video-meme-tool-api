@@ -25,6 +25,13 @@ const WAVE_FORM_FILE = 'waveform.png';
 const WIDTH_FRAME = 70;
 const HEIGHT_FRAME = 50;
 
+export interface ReplaceAutioResult {
+  link: string;
+  duration: number;
+  ext: string;
+  name: string;
+}
+
 @Injectable()
 export class VideoService {
   constructor(
@@ -69,7 +76,8 @@ export class VideoService {
           console.error('getDuration error:', err);
           return reject(err);
         }
-        resolve(metadata.format.duration || 0);
+        const replicaStream = metadata.streams.find((stream: ffmpeg.FfprobeStream) => stream.codec_type === 'audio');
+        resolve(Number(replicaStream.duration || metadata.format.duration));
       });
     });
   }
@@ -173,19 +181,19 @@ export class VideoService {
     inputAudio: string,
     replacementText: string,
     _startTime: number,
-  ): Promise<string> {
+  ): Promise<ReplaceAutioResult> {
     const originalVideo = join(process.cwd(), 'public', inputVideo);
     const originalAudio = join(process.cwd(), 'public', inputAudio);
     const replacementAudioPath = join(process.cwd(), 'public', await this.testSpeech(replacementText));
 
+    const ext = '.mp4';
     const startTime = Number(_startTime);
-    const output = join(process.cwd(), 'public', inputAudio.replace(AUDIO_FILE, ''), `${randStr()}.mp4`);
-    const repMeta = await this.getMeta(replacementAudioPath);
-    const repStream = repMeta.streams.find((stream: ffmpeg.FfprobeStream) => stream.codec_type === 'audio');
-    const repDur = Number(repStream.duration || repMeta.format.duration);
-    const afterStart = startTime + repDur;
+    const name = `${randStr()}${ext}`;
+    const output = join(process.cwd(), 'public', inputAudio.replace(AUDIO_FILE, ''), name);
+    const replicaDuration = await this.getDuration(replacementAudioPath);
+    const afterStart = startTime + replicaDuration;
 
-    return new Promise<string>((resolve, reject) => {
+    return new Promise<ReplaceAutioResult>((resolve, reject) => {
       ffmpeg()
         .input(originalVideo)
         .input(originalAudio)
@@ -218,7 +226,8 @@ export class VideoService {
           await unlink(replacementAudioPath);
           const videoPart = PATH_ROOT.split('/')[1];
           const index = output.indexOf(`/${videoPart}/`);
-          resolve(output.slice(index));
+          const updatedDuration = await this.getDuration(output);
+          resolve({ link: output.slice(index), duration: updatedDuration, ext, name });
         })
         .on('error', (err) => {
           console.error('replacePartAudio error:', err);

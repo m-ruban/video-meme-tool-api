@@ -64,13 +64,13 @@ export class UploadController {
   @UseGuards(AuthGuard)
   @Post('update-audio')
   async updateAudio(@Body() requestDto: UpdateAudioDto) {
-    const link = await this.videoService.replacePartAudio(
+    const result = await this.videoService.replacePartAudio(
       requestDto.inputVideo,
       requestDto.inputAudio,
       requestDto.replacementText,
       requestDto.startTime,
     );
-    return { link };
+    return result;
   }
 
   @UseGuards(AuthGuard)
