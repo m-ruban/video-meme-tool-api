@@ -11,6 +11,7 @@ interface TestSpeechDto {
 }
 
 interface UpdateAudioDto {
+  inputVideo: string;
   inputAudio: string;
   replacementText: string;
   startTime: number;
@@ -64,6 +65,7 @@ export class UploadController {
   @Post('update-audio')
   async updateAudio(@Body() requestDto: UpdateAudioDto) {
     const link = await this.videoService.replacePartAudio(
+      requestDto.inputVideo,
       requestDto.inputAudio,
       requestDto.replacementText,
       requestDto.startTime,
