@@ -25,12 +25,19 @@ const WAVE_FORM_FILE = 'waveform.png';
 const WIDTH_FRAME = 70;
 const HEIGHT_FRAME = 50;
 
-export interface ReplaceAutioResult {
+export interface ReplaceAudioResult {
   link: string;
   duration: number;
   ext: string;
   name: string;
 }
+
+export interface Phrase {
+  label: string;
+  start: number;
+}
+
+type Segment = { kind: 'orig'; start: number; end: number | null } | { kind: 'rep'; inputIdx: number };
 
 @Injectable()
 export class VideoService {
@@ -176,43 +183,73 @@ export class VideoService {
     return new Promise<ffmpeg.FfprobeData>((resolve) => ffmpeg.ffprobe(path, (_, meta) => resolve(meta)));
   }
 
-  async replacePartAudio(
-    inputVideo: string,
-    inputAudio: string,
-    replacementText: string,
-    _startTime: number,
-  ): Promise<ReplaceAutioResult> {
+  async replacePartAudio(inputVideo: string, inputAudio: string, phrases: Phrase[]): Promise<ReplaceAudioResult> {
     const originalVideo = join(process.cwd(), 'public', inputVideo);
     const originalAudio = join(process.cwd(), 'public', inputAudio);
-    const replacementAudioPath = join(process.cwd(), 'public', await this.testSpeech(replacementText));
 
+    // prepare phrases
+    const sortedPhrases = [...phrases].sort((a, b) => a.start - b.start);
+    const replacements = await Promise.all(
+      sortedPhrases.map(async ({ label, start }) => {
+        const file = await this.testSpeech(label);
+        const path = join(process.cwd(), 'public', file);
+        const duration = await this.getDuration(path);
+        return { start, path, duration };
+      }),
+    );
+
+    // generate segsments
+    const origalDuration = await this.getDuration(originalAudio);
+    const segments: Segment[] = [];
+    let cursor = 0;
+    let nextInput = 2; // 0: video, 1: original, next — replace
+    for (const replacement of replacements) {
+      if (replacement.start > cursor) {
+        segments.push({ kind: 'orig', start: cursor, end: replacement.start }); // gap
+      }
+      segments.push({ kind: 'rep', inputIdx: nextInput }); // replace
+      cursor = replacement.start + replacement.duration;
+      nextInput += 1;
+    }
+    if (cursor < origalDuration) {
+      segments.push({ kind: 'orig', start: cursor, end: null }); // end
+    }
+
+    // filters
+    const complex: any[] = [];
+    const concatIns: string[] = [];
+    segments.forEach((segment, index) => {
+      const out = `seg${index}`;
+      if (segment.kind === 'orig') {
+        const trimOut = `${out}_t`;
+        const opts = segment.end == null ? `start=${segment.start}` : `start=${segment.start}:end=${segment.end}`;
+        complex.push(
+          { filter: 'atrim', options: opts, inputs: '1:a:0', outputs: trimOut },
+          { filter: 'asetpts', options: 'PTS-STARTPTS', inputs: trimOut, outputs: out },
+        );
+      } else {
+        complex.push({ filter: 'asetpts', options: 'PTS-STARTPTS', inputs: `${segment.inputIdx}:a:0`, outputs: out });
+      }
+      concatIns.push(out);
+    });
+
+    complex.push(
+      { filter: 'concat', options: { n: concatIns.length, v: 0, a: 1 }, inputs: concatIns, outputs: 'aout_raw' },
+      { filter: 'aresample', options: 'async=1:first_pts=0', inputs: 'aout_raw', outputs: 'aout' },
+    );
+
+    // call ffmpeg
     const ext = '.mp4';
-    const startTime = Number(_startTime);
     const name = `${randStr()}${ext}`;
     const output = join(process.cwd(), 'public', inputAudio.replace(AUDIO_FILE, ''), name);
-    const replicaDuration = await this.getDuration(replacementAudioPath);
-    const afterStart = startTime + replicaDuration;
 
-    return new Promise<ReplaceAutioResult>((resolve, reject) => {
-      ffmpeg()
-        .input(originalVideo)
-        .input(originalAudio)
-        .input(replacementAudioPath)
-        .complexFilter([
-          // original audio before startTime
-          { filter: 'atrim', options: `end=${startTime}`, inputs: '1:a:0', outputs: 'pre' },
-          { filter: 'asetpts', options: 'PTS-STARTPTS', inputs: 'pre', outputs: 'pre' },
-          // replace audio
-          { filter: 'asetpts', options: 'PTS-STARTPTS', inputs: '2:a:0', outputs: 'rep' },
-          // original audio after afterStart
-          { filter: 'atrim', options: `start=${afterStart}`, inputs: '1:a:0', outputs: 'post' },
-          { filter: 'asetpts', options: 'PTS-STARTPTS', inputs: 'post', outputs: 'post' },
-          // concat
-          { filter: 'concat', options: { n: 3, v: 0, a: 1 }, inputs: ['pre', 'rep', 'post'], outputs: 'aout_raw' },
-          // resampl
-          { filter: 'aresample', options: 'async=1:first_pts=0', inputs: 'aout_raw', outputs: 'aout_pad' },
-          { filter: 'apad', inputs: 'aout_pad', outputs: 'aout' },
-        ])
+    return new Promise<ReplaceAudioResult>((resolve, reject) => {
+      const ffmpegCommand = ffmpeg().input(originalVideo).input(originalAudio);
+      for (const replacement of replacements) {
+        ffmpegCommand.input(replacement.path);
+      }
+      ffmpegCommand
+        .complexFilter(complex)
         .outputOptions([
           '-map 0:v:0',
           '-map [aout]',
@@ -223,14 +260,16 @@ export class VideoService {
           '-fflags +genpts',
         ])
         .on('end', async () => {
-          await unlink(replacementAudioPath);
+          // чистим tts файлы
+          await Promise.all(replacements.map((replacement) => unlink(replacement.path).catch(() => {})));
           const videoPart = PATH_ROOT.split('/')[1];
-          const index = output.indexOf(`/${videoPart}/`);
-          const updatedDuration = await this.getDuration(output);
-          resolve({ link: output.slice(index), duration: updatedDuration, ext, name });
+          const idx = output.indexOf(`/${videoPart}/`);
+          const duration = await this.getDuration(output);
+          resolve({ link: output.slice(idx), duration, ext, name });
         })
-        .on('error', (err) => {
-          console.error('replacePartAudio error:', err);
+        .on('error', async (err) => {
+          await Promise.all(replacements.map((replacement) => unlink(replacement.path).catch(() => {})));
+          console.error('replacePartsAudio error:', err);
           reject(err);
         })
         .save(output);

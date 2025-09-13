@@ -1,7 +1,16 @@
-import { Controller, UseGuards, Post, UploadedFile, UseInterceptors, Body, Ip } from '@nestjs/common';
+import {
+  Controller,
+  UseGuards,
+  Post,
+  UploadedFile,
+  UseInterceptors,
+  Body,
+  Ip,
+  BadRequestException,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UploadService } from 'src/upload/upload.service';
-import { VideoService } from 'src/video/video.service';
+import { VideoService, Phrase } from 'src/video/video.service';
 import { AuthGuard } from 'src/auth/auth.guard';
 
 const FILE_SIZE = Math.pow(1024, 2) * 10; // 10 MB
@@ -13,8 +22,7 @@ interface TestSpeechDto {
 interface UpdateAudioDto {
   inputVideo: string;
   inputAudio: string;
-  replacementText: string;
-  startTime: number;
+  phrases: string;
 }
 
 interface UpdateMemeDto {
@@ -64,13 +72,17 @@ export class UploadController {
   @UseGuards(AuthGuard)
   @Post('update-audio')
   async updateAudio(@Body() requestDto: UpdateAudioDto) {
-    const result = await this.videoService.replacePartAudio(
-      requestDto.inputVideo,
-      requestDto.inputAudio,
-      requestDto.replacementText,
-      requestDto.startTime,
-    );
-    return result;
+    let phrases: Phrase[] = [];
+    try {
+      console.log();
+      phrases = JSON.parse(requestDto.phrases);
+      if (!Array.isArray(phrases)) {
+        throw new Error();
+      }
+    } catch {
+      throw new BadRequestException('phrases must be a json array');
+    }
+    return await this.videoService.replacePartAudio(requestDto.inputVideo, requestDto.inputAudio, phrases);
   }
 
   @UseGuards(AuthGuard)
