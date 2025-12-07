@@ -258,12 +258,11 @@ export class VideoService {
       return inputPath;
     }
 
-    const padDuration = targetDuration - originalDuration;
     const outPath = inputPath.replace(/\.mp3$/i, '_processed.mp3');
 
     return new Promise<string>((resolve, reject) => {
       ffmpeg(inputPath)
-        .audioFilters(`apad=pad_dur=${padDuration}`)
+        .audioFilters('apad')
         .duration(targetDuration)
         .on('error', (err) => {
           console.error('applyFill error:', err);
