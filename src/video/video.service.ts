@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import * as ffmpeg from 'fluent-ffmpeg';
 import * as ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import * as ffprobeStatic from 'ffprobe-static';
-import { existsSync } from 'fs';
+import { existsSync, renameSync } from 'fs';
 import { readdir, unlink, rm } from 'fs/promises';
 import { join } from 'path';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -227,6 +227,7 @@ export class VideoService {
 
     const tempo = originalDuration / targetDuration;
     const filters = this.buildAtempoFilters(tempo);
+    const outPath = inputPath.replace(/\.mp3$/i, '_processed.mp3');
 
     return new Promise<string>((resolve, reject) => {
       ffmpeg(inputPath)
@@ -236,9 +237,9 @@ export class VideoService {
           reject(err);
         })
         .on('end', () => {
-          resolve(inputPath);
+          resolve(outPath);
         })
-        .save(inputPath);
+        .save(outPath);
     });
   }
 
@@ -258,7 +259,7 @@ export class VideoService {
     }
 
     const padDuration = targetDuration - originalDuration;
-    const outputPath = inputPath.replace(/\.mp3$/i, '_fill.mp3'); // TODO delete
+    const outPath = inputPath.replace(/\.mp3$/i, '_processed.mp3');
 
     return new Promise<string>((resolve, reject) => {
       ffmpeg(inputPath)
@@ -269,9 +270,9 @@ export class VideoService {
           reject(err);
         })
         .on('end', () => {
-          resolve(outputPath);
+          resolve(outPath);
         })
-        .save(outputPath);
+        .save(outPath);
     });
   }
 
@@ -296,11 +297,14 @@ export class VideoService {
         }
 
         const originalDuration = await this.getDuration(fullPath);
+        let processedFile: string;
         if (mode === 'stretch') {
-          await this.applyStretch(fullPath, duration, originalDuration);
+          processedFile = await this.applyStretch(fullPath, duration, originalDuration);
         } else if (mode === 'fill') {
-          this.applyFill(fullPath, duration, originalDuration);
+          processedFile = await this.applyFill(fullPath, duration, originalDuration);
         }
+        // ffmpeg cannot edit existing files in-place
+        renameSync(processedFile, fullPath);
 
         const videoPart = PATH_ROOT.split('/')[1];
         const index = fullPath.indexOf(`/${videoPart}/`);
