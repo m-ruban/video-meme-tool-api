@@ -2,12 +2,12 @@ import { Injectable } from '@nestjs/common';
 import * as ffmpeg from 'fluent-ffmpeg';
 import * as ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import * as ffprobeStatic from 'ffprobe-static';
-import { existsSync, renameSync } from 'fs';
+import { existsSync, renameSync, copyFileSync } from 'fs';
 import { readdir, unlink, rm } from 'fs/promises';
 import { join } from 'path';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { PATH_ROOT, PATH_TEMP_VIDEOS, randStr, PATH_ROOT_VIDEOS, removeSuffix } from 'src/utils';
+import { PATH_ROOT, PATH_TEMP_VIDEOS, randStr, PATH_ROOT_VIDEOS, removeSuffix, checkAndCreatePath } from 'src/utils';
 import { Meme } from 'src/video/meme.entity';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -24,6 +24,7 @@ const AUDIO_FILE_MP3 = 'audio.mp3';
 const WAVE_FORM_FILE = 'waveform.png';
 const WIDTH_FRAME = 70;
 const HEIGHT_FRAME = 50;
+const PATH_PATTERN = /public\/video\/\d{4}-\d{2}-\d{2}\/[A-Za-z0-9]{10}-\d{13}$/;
 
 export interface ReplaceAudioResult {
   link: string;
@@ -412,46 +413,37 @@ export class VideoService {
     });
   }
 
-  async saveMeme(inputAudio: string, inputVideo: string, ipAddress: string): Promise<string> {
-    const originalAudio = join(process.cwd(), 'public', inputAudio);
+  async saveMeme(inputVideo: string, ipAddress: string): Promise<string> {
     const originalVideo = join(process.cwd(), 'public', inputVideo);
     const tmpPath = removeSuffix(originalVideo, '.mp4');
-
     const danas = new Date().toISOString().slice(0, 10);
-    const outputPath = join(PATH_ROOT_VIDEOS, `/${danas}`, `${randStr()}-${Date.now()}.mp4`);
+    const outputDirectory = join(PATH_ROOT_VIDEOS, `/${danas}`);
+    const outputPath = join(outputDirectory, `${randStr()}-${Date.now()}.mp4`);
+    checkAndCreatePath(outputDirectory);
 
-    return new Promise((resolve, reject) => {
-      ffmpeg()
-        .input(originalVideo)
-        .input(originalAudio)
-        .outputOptions(['-map 0:v:0', '-map 1:a:0', '-c:v copy', '-c:a copy', '-shortest'])
-        .on('end', async () => {
-          const videoPart = PATH_ROOT.split('/')[1];
-          const index = outputPath.indexOf(`/${videoPart}/`);
-          const fileLink = outputPath.slice(index);
-          const link = removeSuffix(fileLink, '.mp4');
+    // save regular path
+    copyFileSync(originalVideo, outputPath);
 
-          // save link
-          const meme = new Meme();
-          meme.link = link;
-          meme.ipAddress = ipAddress;
-          meme.deleted = false;
-          await this.memeRepository.save(meme);
+    // prepare correct video path
+    const videoPart = PATH_ROOT.split('/')[1];
+    const index = outputPath.indexOf(`/${videoPart}/`);
+    const fileLink = outputPath.slice(index);
+    const link = removeSuffix(fileLink, '.mp4');
 
-          // clear data
-          await unlink(originalAudio);
-          await unlink(originalVideo);
-          await rm(tmpPath, { recursive: true, force: true });
+    // save link
+    const meme = new Meme();
+    meme.link = link;
+    meme.ipAddress = ipAddress;
+    meme.deleted = false;
+    await this.memeRepository.save(meme);
 
-          // return link
-          resolve(link);
-        })
-        .on('error', (err) => {
-          console.error('saveMeme error during merging:', err);
-          reject(err);
-        })
-        .save(outputPath);
-    });
+    // clear tmp files
+    await unlink(originalVideo);
+    if (PATH_PATTERN.test(tmpPath)) {
+      await rm(tmpPath, { recursive: true, force: true });
+    }
+
+    return Promise.resolve(link);
   }
 
   async validateMemeByLink(date: string, link: string): Promise<boolean> {
