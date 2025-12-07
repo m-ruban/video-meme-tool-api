@@ -10,13 +10,15 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UploadService } from 'src/upload/upload.service';
-import { VideoService, Phrase } from 'src/video/video.service';
+import { VideoService, Phrase, PhraseMode } from 'src/video/video.service';
 import { AuthGuard } from 'src/auth/auth.guard';
 
 const FILE_SIZE = Math.pow(1024, 2) * 10; // 10 MB
 
 interface TestSpeechDto {
   text: string;
+  mode: PhraseMode;
+  duration: number;
 }
 
 interface UpdateAudioDto {
@@ -65,7 +67,7 @@ export class UploadController {
   @UseGuards(AuthGuard)
   @Post('speech-test')
   async testSpeech(@Body() requestDto: TestSpeechDto) {
-    const link = await this.videoService.testSpeech(requestDto.text);
+    const link = await this.videoService.testSpeech(requestDto.text, requestDto.mode, requestDto.duration);
     return { link };
   }
 
@@ -74,7 +76,6 @@ export class UploadController {
   async updateAudio(@Body() requestDto: UpdateAudioDto) {
     let phrases: Phrase[] = [];
     try {
-      console.log();
       phrases = JSON.parse(requestDto.phrases);
       if (!Array.isArray(phrases)) {
         throw new Error();

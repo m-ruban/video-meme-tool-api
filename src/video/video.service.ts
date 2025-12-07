@@ -32,9 +32,13 @@ export interface ReplaceAudioResult {
   name: string;
 }
 
+export type PhraseMode = 'stretch' | 'fill';
+
 export interface Phrase {
   label: string;
   start: number;
+  duration: number;
+  mode: PhraseMode;
 }
 
 type Segment = { kind: 'orig'; start: number; end: number | null } | { kind: 'rep'; inputIdx: number };
@@ -46,6 +50,12 @@ export class VideoService {
     private memeRepository: Repository<Meme>,
   ) {}
 
+  /**
+   * Create frames from video
+   * @param inputPath path to video
+   * @param outputDir path for save frames
+   * @returns array of paths
+   */
   async extractFrames(inputPath: string, outputDir: string): Promise<string[]> {
     return new Promise((resolve, reject) => {
       ffmpeg(inputPath)
@@ -63,6 +73,11 @@ export class VideoService {
     });
   }
 
+  /**
+   * Get frames into folders
+   * @param folderPath path to folder
+   * @returns array of paths
+   */
   async getFramePaths(folderPath: string): Promise<string[]> {
     const files = await readdir(folderPath);
     return files
@@ -76,6 +91,11 @@ export class VideoService {
       });
   }
 
+  /**
+   * Get duration from meta data
+   * @param inputPath path to media
+   * @returns duration info
+   */
   async getDuration(inputPath: string): Promise<number> {
     return new Promise((resolve, reject) => {
       ffmpeg.ffprobe(inputPath, (err, metadata) => {
@@ -89,6 +109,12 @@ export class VideoService {
     });
   }
 
+  /**
+   * Extract audio sourse (aac format)
+   * @param inputPath path to video
+   * @param outputPath path for new audio sourse
+   * @returns path for audio
+   */
   async extractAudio(inputPath: string, outputPath: string): Promise<string> {
     return new Promise((resolve, reject) => {
       ffmpeg(inputPath)
@@ -106,6 +132,12 @@ export class VideoService {
     });
   }
 
+  /**
+   * Extract audio sourse (mp3 format)
+   * @param inputPath path to video
+   * @param outputPath path for new audio sourse
+   * @returns path for audio
+   */
   async extractAudioMp3(inputPath: string, outputPath: string): Promise<string> {
     return new Promise((resolve, reject) => {
       ffmpeg(inputPath)
@@ -123,6 +155,13 @@ export class VideoService {
     });
   }
 
+  /**
+   * Create image, which represents waveform of the audio source
+   * @param inputPath path to video
+   * @param outputPath path for save image
+   * @param countFrames the number of frames generated early (need for image size)
+   * @returns path to waveform
+   */
   async extractWaveform(inputPath: string, outputPath: string, countFrames: number): Promise<string> {
     return new Promise((resolve, reject) => {
       ffmpeg(inputPath)
@@ -145,44 +184,138 @@ export class VideoService {
     });
   }
 
-  async testSpeech(text: string): Promise<string> {
+  /**
+   * Splits a tempo value into a sequence of valid FFmpeg `atempo` filters.
+   * FFmpeg only accepts `atempo` values in the 0.5–2.0 range
+   *
+   * Examples:
+   *   tempo = 4    → ["atempo=2", "atempo=2"]
+   *   tempo = 0.25 → ["atempo=0.5", "atempo=0.5"]
+   *
+   * @param tempo Target speed ratio (originalDuration / targetDuration)
+   * @returns Array of valid `atempo` filters for FFmpeg
+   */
+  buildAtempoFilters(tempo: number): string[] {
+    const filters: string[] = [];
+
+    let remaining = tempo;
+    if (!isFinite(remaining) || remaining <= 0) {
+      remaining = 1;
+    }
+
+    while (remaining < 0.5 || remaining > 2) {
+      const part = remaining < 1 ? 0.5 : 2;
+      filters.push(`atempo=${part}`);
+      remaining /= part;
+    }
+
+    filters.push(`atempo=${remaining}`);
+    return filters;
+  }
+
+  /**
+   * Apply stretch mode, based on using atempo filter
+   * @param inputPath path to audio
+   * @param targetDuration duration, which needs to be obtained
+   * @param originalDuration duration based on meta info
+   * @returns path to new audio source
+   */
+  async applyStretch(inputPath: string, targetDuration: number, originalDuration: number): Promise<string> {
+    if (!targetDuration || targetDuration <= 0) {
+      return inputPath;
+    }
+
+    const tempo = originalDuration / targetDuration;
+    const filters = this.buildAtempoFilters(tempo);
+
+    return new Promise<string>((resolve, reject) => {
+      ffmpeg(inputPath)
+        .audioFilters(filters)
+        .on('error', (err) => {
+          console.error('applyStretch error:', err);
+          reject(err);
+        })
+        .on('end', () => {
+          resolve(inputPath);
+        })
+        .save(inputPath);
+    });
+  }
+
+  /**
+   * Apply fill mode, audio will be filled silence
+   * @param inputPath path to audio
+   * @param targetDuration duration, which needs to be obtained
+   * @param originalDuration duration based on meta info
+   * @returns path to new audio source
+   */
+  async applyFill(inputPath: string, targetDuration: number, originalDuration: number): Promise<string> {
+    if (!targetDuration || targetDuration <= 0) {
+      return inputPath;
+    }
+    if (originalDuration >= targetDuration) {
+      return inputPath;
+    }
+
+    const padDuration = targetDuration - originalDuration;
+    const outputPath = inputPath.replace(/\.mp3$/i, '_fill.mp3'); // TODO delete
+
+    return new Promise<string>((resolve, reject) => {
+      ffmpeg(inputPath)
+        .audioFilters(`apad=pad_dur=${padDuration}`)
+        .duration(targetDuration)
+        .on('error', (err) => {
+          console.error('applyFill error:', err);
+          reject(err);
+        })
+        .on('end', () => {
+          resolve(outputPath);
+        })
+        .save(outputPath);
+    });
+  }
+
+  /**
+   * Generate speech based on text and mode
+   * @param text text of speech
+   * @param mode mode for phrase (fill - will be filled silence, stretch - will be stretched to target duration)
+   * @param duration target duration
+   * @returns path to new audio
+   */
+  async testSpeech(text: string, mode: PhraseMode = 'fill', duration: number): Promise<string> {
     const filename = `${randStr()}.mp3`;
     const fullPath = join(PATH_TEMP_VIDEOS, filename);
 
     return await new Promise<string>((resolve, reject) => {
       const gtts = new gTTS(text, LANG);
-      gtts.save(fullPath, (err: Error | null) => {
+      gtts.save(fullPath, async (err: Error | null) => {
         if (err) {
           console.error('testSpeech error:', err);
           reject(err);
-        } else {
-          const videoPart = PATH_ROOT.split('/')[1];
-          const index = fullPath.indexOf(`/${videoPart}/`);
-          resolve(fullPath.slice(index));
+          return;
         }
+
+        const originalDuration = await this.getDuration(fullPath);
+        if (mode === 'stretch') {
+          await this.applyStretch(fullPath, duration, originalDuration);
+        } else if (mode === 'fill') {
+          this.applyFill(fullPath, duration, originalDuration);
+        }
+
+        const videoPart = PATH_ROOT.split('/')[1];
+        const index = fullPath.indexOf(`/${videoPart}/`);
+        resolve(fullPath.slice(index));
       });
     });
   }
 
-  async cutAudio(input: string, output: string, start: number, duration: number) {
-    return new Promise<void>((resolve, reject) => {
-      ffmpeg(input)
-        .setStartTime(start)
-        .setDuration(duration)
-        .output(output)
-        .on('end', () => resolve())
-        .on('error', (err) => {
-          console.error('cutAudio error:', err);
-          reject(err);
-        })
-        .run();
-    });
-  }
-
-  async getMeta(path: string): Promise<ffmpeg.FfprobeData> {
-    return new Promise<ffmpeg.FfprobeData>((resolve) => ffmpeg.ffprobe(path, (_, meta) => resolve(meta)));
-  }
-
+  /**
+   * Based on array of phrases and original audio, generate new audio source
+   * @param inputVideo original video
+   * @param inputAudio original audio
+   * @param phrases array of phrases
+   * @returns link to new video
+   */
   async replacePartAudio(inputVideo: string, inputAudio: string, phrases: Phrase[]): Promise<ReplaceAudioResult> {
     const originalVideo = join(process.cwd(), 'public', inputVideo);
     const originalAudio = join(process.cwd(), 'public', inputAudio);
@@ -190,11 +323,11 @@ export class VideoService {
     // prepare phrases
     const sortedPhrases = [...phrases].sort((a, b) => a.start - b.start);
     const replacements = await Promise.all(
-      sortedPhrases.map(async ({ label, start }) => {
-        const file = await this.testSpeech(label);
+      sortedPhrases.map(async ({ label, start, mode, duration }) => {
+        const file = await this.testSpeech(label, mode, duration);
         const path = join(process.cwd(), 'public', file);
-        const duration = await this.getDuration(path);
-        return { start, path, duration };
+        const durationFromMeta = await this.getDuration(path);
+        return { start, path, duration: durationFromMeta };
       }),
     );
 
