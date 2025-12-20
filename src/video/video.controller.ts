@@ -1,7 +1,7 @@
 import { Controller, Param, Get, UnauthorizedException } from '@nestjs/common';
 import { VideoService } from 'src/video/video.service';
 
-@Controller('meme')
+@Controller('video')
 export class VideoController {
   constructor(private videoService: VideoService) {}
 
