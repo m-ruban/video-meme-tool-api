@@ -459,6 +459,7 @@ export class VideoService {
     if (!meme) {
       return false;
     }
+    meme.link = `${meme.link}.mp4`;
     return meme;
   }
 }
