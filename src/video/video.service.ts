@@ -446,15 +446,19 @@ export class VideoService {
     return Promise.resolve(link);
   }
 
-  async validateMemeByLink(date: string, link: string): Promise<boolean> {
-    const meme = await this.memeRepository.findOneBy({ link: `/video/${date}/${link}`, deleted: false });
-    if (!meme) {
-      return false;
-    }
+  async getMemePath(date: string, link: string): Promise<string | false> {
     const fullPath = join(PATH_ROOT_VIDEOS, `${date}`, `${link}.mp4`);
     if (!existsSync(fullPath)) {
       return false;
     }
-    return true;
+    return fullPath;
+  }
+
+  async getMemeByLink(date: string, link: string): Promise<Meme | false> {
+    const meme = await this.memeRepository.findOneBy({ link: `/video/${date}/${link}`, deleted: false });
+    if (!meme) {
+      return false;
+    }
+    return meme;
   }
 }

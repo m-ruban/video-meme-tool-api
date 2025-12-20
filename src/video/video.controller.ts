@@ -7,10 +7,12 @@ export class VideoController {
 
   @Get('/:date/:link')
   async validateMemeByLink(@Param() params: { date: string; link: string }) {
-    const result = await this.videoService.validateMemeByLink(params.date, params.link);
-    if (!result) {
+    const meme = await this.videoService.getMemeByLink(params.date, params.link);
+    const fullPath = await this.videoService.getMemePath(params.date, params.link);
+    if (!meme || !fullPath) {
       throw new UnauthorizedException('file not valid');
     }
-    return null; // 200 if it's ok!
+    const duration = await this.videoService.getDuration(fullPath);
+    return { ...meme, duration };
   }
 }
