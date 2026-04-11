@@ -1,7 +1,16 @@
 import { copyFileSync, unlinkSync } from 'fs';
-import { parse, join } from 'path';
+import { parse, join, dirname } from 'path';
 import { Injectable } from '@nestjs/common';
-import { checkAndCreatePath, randStr, PATH_ROOT, PATH_ROOT_VIDEOS } from 'src/utils';
+import { unlink } from 'fs/promises';
+import * as sharp from 'sharp';
+import {
+  checkAndCreatePath,
+  randStr,
+  PATH_ROOT_VIDEOS,
+  FULL_PATH_ROOT_VIDEOS,
+  PATH_ROOT_TEMP,
+  relativePath,
+} from 'src/utils';
 
 export interface ProcessedFile {
   uploadedFile: {
@@ -20,11 +29,45 @@ export interface ProcessedFile {
 export class UploadService {
   constructor() {}
 
-  async processUserFile(file: Express.Multer.File): Promise<ProcessedFile> {
+  async processImageFile(file: Express.Multer.File): Promise<ProcessedFile> {
+    const dir = dirname(file.path);
+    const ext = '.webp';
+    const newFileBase = Date.now().toString();
+    const newFileName = `${newFileBase}${ext}`;
+    const newFilePath = join(dir, newFileName);
+
+    await sharp(file.path)
+      .rotate()
+      .resize({
+        width: 350,
+        withoutEnlargement: true,
+      })
+      .webp({
+        quality: 80,
+      })
+      .toFile(newFilePath);
+
+    await unlink(file.path).catch(() => undefined);
+
+    return {
+      uploadedFile: {
+        base: newFileBase,
+        ext: ext,
+        name: newFileName,
+        link: relativePath(newFilePath, PATH_ROOT_TEMP),
+      },
+      info: {
+        fullName: newFileName,
+        fullPath: newFilePath,
+      },
+    };
+  }
+
+  async processVideoFile(file: Express.Multer.File): Promise<ProcessedFile> {
     // prepare some info
     const danas = new Date().toISOString().slice(0, 10);
     const relativePath = join(`/${danas}`);
-    const fullPath = join(PATH_ROOT_VIDEOS, relativePath);
+    const fullPath = join(FULL_PATH_ROOT_VIDEOS, relativePath);
     checkAndCreatePath(fullPath);
 
     // move video into new dir
@@ -35,7 +78,7 @@ export class UploadService {
     copyFileSync(file.path, newFilePath);
 
     // create tmp dir
-    const tmpPath = join(PATH_ROOT, relativePath, newFileBase);
+    const tmpPath = join(PATH_ROOT_VIDEOS, relativePath, newFileBase);
     checkAndCreatePath(tmpPath);
 
     // clear tmp files

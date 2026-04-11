@@ -1,9 +1,18 @@
 import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 
-export const PATH_ROOT = 'public/video';
-export const PATH_ROOT_VIDEOS = join(process.cwd(), PATH_ROOT);
-export const PATH_TEMP_VIDEOS = join(PATH_ROOT_VIDEOS, '/temp');
+export const PATH_ROOT = 'public';
+export const PATH_ROOT_VIDEOS = `${PATH_ROOT}/video`;
+export const PATH_ROOT_TEMP = `${PATH_ROOT_VIDEOS}/temp`;
+
+export const FULL_PATH_ROOT_VIDEOS = join(process.cwd(), PATH_ROOT_VIDEOS);
+export const FULL_PATH_TEMP_VIDEOS = join(process.cwd(), PATH_ROOT_TEMP);
+
+export const relativePath = (file: string, path: string) => {
+  const videoPart = path.split('/')[1];
+  const link = file.slice(file.indexOf(`/${videoPart}/`));
+  return link;
+};
 
 export const checkAndCreatePath = (path: string) => {
   if (!existsSync(path)) {

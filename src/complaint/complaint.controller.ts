@@ -14,8 +14,8 @@ export class ComplaintController {
 
   @UseGuards(AuthGuard)
   @Post('/:memeId')
-  createComplaint(@Param() params: { memeId: number }, @Body() requestDto: CreateComplaintProps) {
-    return this.complaintService.create(requestDto.reason, requestDto.description, requestDto.email, params.memeId);
+  createComplaint(@Param() params: { memeId: number }, @Body() { reason, description, email }: CreateComplaintProps) {
+    return this.complaintService.create(reason, description, email, params.memeId);
   }
 
   @UseGuards(AuthGuard)

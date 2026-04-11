@@ -12,6 +12,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { UploadService } from 'src/upload/upload.service';
 import { VideoService, Phrase, PhraseMode } from 'src/video/video.service';
 import { AuthGuard } from 'src/auth/auth.guard';
+import { FileTypePipe, UploadedFileWithType } from 'src/upload/file-type.pipe';
 
 const FILE_SIZE = Math.pow(1024, 2) * 10; // 10 MB
 
@@ -45,8 +46,14 @@ export class UploadController {
       limits: { fileSize: FILE_SIZE },
     }),
   )
-  async upload(@UploadedFile() file: Express.Multer.File) {
-    const { uploadedFile, info } = await this.uploadService.processUserFile(file);
+  async upload(@UploadedFile(FileTypePipe) file: UploadedFileWithType) {
+    if (file.detectedMime.startsWith('image/')) {
+      const { uploadedFile } = await this.uploadService.processImageFile(file);
+      return uploadedFile;
+    }
+
+    // video branch
+    const { uploadedFile, info } = await this.uploadService.processVideoFile(file);
     const { fullName, fullPath } = info;
     const frames = await this.videoService.extractFrames(fullName, fullPath);
     const duration = await this.videoService.getDuration(fullName);
@@ -65,30 +72,30 @@ export class UploadController {
 
   @UseGuards(AuthGuard)
   @Post('speech-test')
-  async testSpeech(@Body() requestDto: TestSpeechDto) {
-    const link = await this.videoService.testSpeech(requestDto.text, requestDto.mode, requestDto.duration);
+  async testSpeech(@Body() { text, mode, duration }: TestSpeechDto) {
+    const link = await this.videoService.testSpeech(text, mode, duration);
     return { link };
   }
 
   @UseGuards(AuthGuard)
   @Post('update-audio')
-  async updateAudio(@Body() requestDto: UpdateAudioDto) {
+  async updateAudio(@Body() { inputVideo, inputAudio, phrases: phrasesRaw }: UpdateAudioDto) {
     let phrases: Phrase[] = [];
     try {
-      phrases = JSON.parse(requestDto.phrases);
+      phrases = JSON.parse(phrasesRaw);
       if (!Array.isArray(phrases)) {
         throw new Error();
       }
     } catch {
       throw new BadRequestException('phrases must be a json array');
     }
-    return await this.videoService.replacePartAudio(requestDto.inputVideo, requestDto.inputAudio, phrases);
+    return await this.videoService.replacePartAudio(inputVideo, inputAudio, phrases);
   }
 
   @UseGuards(AuthGuard)
   @Post('save-meme')
-  async saveMeme(@Body() requestDto: UpdateMemeDto, @Ip() ipAddress: string) {
-    const link = await this.videoService.saveMeme(requestDto.inputVideo, ipAddress);
+  async saveMeme(@Body() { inputVideo }: UpdateMemeDto, @Ip() ipAddress: string) {
+    const link = await this.videoService.saveMeme(inputVideo, ipAddress);
     return { link };
   }
 }

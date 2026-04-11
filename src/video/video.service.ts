@@ -4,10 +4,17 @@ import * as ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import * as ffprobeStatic from 'ffprobe-static';
 import { existsSync, renameSync, copyFileSync } from 'fs';
 import { readdir, unlink, rm } from 'fs/promises';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { PATH_ROOT, PATH_TEMP_VIDEOS, randStr, PATH_ROOT_VIDEOS, removeSuffix, checkAndCreatePath } from 'src/utils';
+import {
+  randStr,
+  removeSuffix,
+  checkAndCreatePath,
+  PATH_ROOT_VIDEOS,
+  FULL_PATH_TEMP_VIDEOS,
+  FULL_PATH_ROOT_VIDEOS,
+} from 'src/utils';
 import { Meme } from 'src/video/meme.entity';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -74,6 +81,63 @@ export class VideoService {
     });
   }
 
+  async overlayImageOnVideo(
+    inputVideo: string,
+    inputImage: string,
+    start: number,
+    end: number,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+  ) {
+    const originalVideo = join(process.cwd(), 'public', inputVideo);
+    const originalImage = join(process.cwd(), 'public', inputImage);
+    const name = `${randStr()}-${Date.now()}.mp4`;
+    const output = join(dirname(originalVideo), name);
+
+    return new Promise((resolve, reject) => {
+      ffmpeg()
+        .input(originalVideo)
+        .input(originalImage)
+        .inputOptions(['-loop 1'])
+        .complexFilter([
+          {
+            filter: 'scale',
+            options: {
+              w: x2 - x1,
+              h: y2 - y1,
+            },
+            inputs: '1:v',
+            outputs: 'scaled',
+          },
+          {
+            filter: 'overlay',
+            options: {
+              x: x1,
+              y: y1,
+              enable: `between(t,${start},${end})`,
+            },
+            inputs: ['0:v', 'scaled'],
+            outputs: 'v',
+          },
+        ])
+        .outputOptions(['-map [v]', '-map 0:a?', '-c:v libx264', '-c:a copy', '-shortest'])
+        .on('end', async () => {
+          await unlink(originalVideo);
+          await unlink(originalImage);
+          const videoPart = PATH_ROOT_VIDEOS.split('/')[1];
+          const index = output.indexOf(`/${videoPart}/`);
+          resolve(output.slice(index));
+        })
+        .on('error', (err) => {
+          console.error('extract overlay error:', err);
+          reject(err);
+        })
+        .save(output);
+    });
+  }
+
   /**
    * Get frames into folders
    * @param folderPath path to folder
@@ -86,7 +150,7 @@ export class VideoService {
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
       .map((file) => {
         const fullPath = join(folderPath, file);
-        const videoPart = PATH_ROOT.split('/')[1];
+        const videoPart = PATH_ROOT_VIDEOS.split('/')[1];
         const index = fullPath.indexOf(`/${videoPart}/`);
         return fullPath.slice(index);
       });
@@ -122,7 +186,7 @@ export class VideoService {
         .noVideo()
         .save(join(outputPath, AUDIO_FILE))
         .on('end', () => {
-          const videoPart = PATH_ROOT.split('/')[1];
+          const videoPart = PATH_ROOT_VIDEOS.split('/')[1];
           const index = outputPath.indexOf(`/${videoPart}/`);
           return resolve(`${outputPath.slice(index)}/${AUDIO_FILE}`);
         })
@@ -145,7 +209,7 @@ export class VideoService {
         .noVideo()
         .save(join(outputPath, AUDIO_FILE_MP3))
         .on('end', () => {
-          const videoPart = PATH_ROOT.split('/')[1];
+          const videoPart = PATH_ROOT_VIDEOS.split('/')[1];
           const index = outputPath.indexOf(`/${videoPart}/`);
           return resolve(`${outputPath.slice(index)}/${AUDIO_FILE_MP3}`);
         })
@@ -173,7 +237,7 @@ export class VideoService {
         ])
         .output(join(outputPath, WAVE_FORM_FILE))
         .on('end', () => {
-          const videoPart = PATH_ROOT.split('/')[1];
+          const videoPart = PATH_ROOT_VIDEOS.split('/')[1];
           const index = outputPath.indexOf(`/${videoPart}/`);
           return resolve(`${outputPath.slice(index)}/${WAVE_FORM_FILE}`);
         })
@@ -285,7 +349,7 @@ export class VideoService {
    */
   async testSpeech(text: string, mode: PhraseMode = 'fill', duration: number): Promise<string> {
     const filename = `${randStr()}.mp3`;
-    const fullPath = join(PATH_TEMP_VIDEOS, filename);
+    const fullPath = join(FULL_PATH_TEMP_VIDEOS, filename);
 
     return await new Promise<string>((resolve, reject) => {
       const gtts = new gTTS(text, LANG);
@@ -306,7 +370,7 @@ export class VideoService {
         // ffmpeg cannot edit existing files in-place
         renameSync(processedFile, fullPath);
 
-        const videoPart = PATH_ROOT.split('/')[1];
+        const videoPart = PATH_ROOT_VIDEOS.split('/')[1];
         const index = fullPath.indexOf(`/${videoPart}/`);
         resolve(fullPath.slice(index));
       });
@@ -399,7 +463,7 @@ export class VideoService {
         .on('end', async () => {
           // чистим tts файлы
           await Promise.all(replacements.map((replacement) => unlink(replacement.path).catch(() => {})));
-          const videoPart = PATH_ROOT.split('/')[1];
+          const videoPart = PATH_ROOT_VIDEOS.split('/')[1];
           const idx = output.indexOf(`/${videoPart}/`);
           const duration = await this.getDuration(output);
           resolve({ link: output.slice(idx), duration, ext, name });
@@ -417,7 +481,7 @@ export class VideoService {
     const originalVideo = join(process.cwd(), 'public', inputVideo);
     const tmpPath = removeSuffix(originalVideo, '.mp4');
     const danas = new Date().toISOString().slice(0, 10);
-    const outputDirectory = join(PATH_ROOT_VIDEOS, `/${danas}`);
+    const outputDirectory = join(FULL_PATH_ROOT_VIDEOS, `/${danas}`);
     const outputPath = join(outputDirectory, `${randStr()}-${Date.now()}.mp4`);
     checkAndCreatePath(outputDirectory);
 
@@ -425,7 +489,7 @@ export class VideoService {
     copyFileSync(originalVideo, outputPath);
 
     // prepare correct video path
-    const videoPart = PATH_ROOT.split('/')[1];
+    const videoPart = PATH_ROOT_VIDEOS.split('/')[1];
     const index = outputPath.indexOf(`/${videoPart}/`);
     const fileLink = outputPath.slice(index);
     const link = removeSuffix(fileLink, '.mp4');
@@ -447,7 +511,7 @@ export class VideoService {
   }
 
   async getMemePath(date: string, link: string): Promise<string | false> {
-    const fullPath = join(PATH_ROOT_VIDEOS, `${date}`, `${link}.mp4`);
+    const fullPath = join(FULL_PATH_ROOT_VIDEOS, `${date}`, `${link}.mp4`);
     if (!existsSync(fullPath)) {
       return false;
     }
