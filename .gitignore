@@ -61,3 +61,5 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 deploy.sh
 first-deploy.sh
+tsconfig.build.tsbuildinfo
+/.vscode/

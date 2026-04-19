@@ -28,7 +28,7 @@ ffmpeg.setFfprobePath(ffprobeStatic.path);
 
 const AUDIO_FILE = 'audio.aac';
 const AUDIO_FILE_MP3 = 'audio.mp3';
-const WAVE_FORM_FILE = 'waveform.png';
+const WAVE_FORM_FILE = 'waveform.webp';
 const WIDTH_FRAME = 70;
 const HEIGHT_FRAME = 50;
 const PATH_PATTERN = /public\/video\/\d{4}-\d{2}-\d{2}\/[A-Za-z0-9]{10}-\d{13}$/;
@@ -67,8 +67,8 @@ export class VideoService {
   async extractFrames(inputPath: string, outputDir: string): Promise<string[]> {
     return new Promise((resolve, reject) => {
       ffmpeg(inputPath)
-        .outputOptions('-vf', 'fps=1')
-        .output(`${outputDir}/frame-%03d.png`)
+        .outputOptions('-vf', 'fps=1', '-c:v', 'libwebp')
+        .output(`${outputDir}/frame-%03d.webp`)
         .on('end', async () => {
           const frames = await this.getFramePaths(outputDir);
           return resolve(frames);
@@ -125,7 +125,6 @@ export class VideoService {
         .outputOptions(['-map [v]', '-map 0:a?', '-c:v libx264', '-c:a copy', '-shortest'])
         .on('end', async () => {
           await unlink(originalVideo);
-          await unlink(originalImage);
           const videoPart = PATH_ROOT_VIDEOS.split('/')[1];
           const index = output.indexOf(`/${videoPart}/`);
           resolve(output.slice(index));
@@ -146,7 +145,7 @@ export class VideoService {
   async getFramePaths(folderPath: string): Promise<string[]> {
     const files = await readdir(folderPath);
     return files
-      .filter((file) => file.match(/^frame-\d+\.png$/))
+      .filter((file) => file.match(/^frame-\d+\.webp$/))
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
       .map((file) => {
         const fullPath = join(folderPath, file);
@@ -234,6 +233,8 @@ export class VideoService {
           '-filter_complex',
           `showwavespic=s=${countFrames * WIDTH_FRAME}x${HEIGHT_FRAME}:colors=0x738697`,
           '-frames:v 1',
+          '-c:v',
+          'libwebp',
         ])
         .output(join(outputPath, WAVE_FORM_FILE))
         .on('end', () => {
