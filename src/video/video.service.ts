@@ -4,7 +4,7 @@ import * as ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import * as ffprobeStatic from 'ffprobe-static';
 import { existsSync, renameSync, copyFileSync } from 'fs';
 import { readdir, unlink, rm } from 'fs/promises';
-import { join, dirname } from 'path';
+import { join } from 'path';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -28,7 +28,7 @@ ffmpeg.setFfprobePath(ffprobeStatic.path);
 
 const AUDIO_FILE = 'audio.aac';
 const AUDIO_FILE_MP3 = 'audio.mp3';
-const WAVE_FORM_FILE = 'waveform.webp';
+const WAVE_FORM_FILE = 'waveform.png';
 const WIDTH_FRAME = 70;
 const HEIGHT_FRAME = 50;
 const PATH_PATTERN = /public\/video\/\d{4}-\d{2}-\d{2}\/[A-Za-z0-9]{10}-\d{13}$/;
@@ -49,6 +49,21 @@ export interface Phrase {
   mode: PhraseMode;
 }
 
+export interface Overlay {
+  inputImage: string;
+  start: number;
+  end: number;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+interface MediaInfo {
+  width: number | null;
+  height: number | null;
+}
+
 type Segment = { kind: 'orig'; start: number; end: number | null } | { kind: 'rep'; inputIdx: number };
 
 @Injectable()
@@ -67,73 +82,17 @@ export class VideoService {
   async extractFrames(inputPath: string, outputDir: string): Promise<string[]> {
     return new Promise((resolve, reject) => {
       ffmpeg(inputPath)
-        .outputOptions('-vf', 'fps=1', '-c:v', 'libwebp')
-        .output(`${outputDir}/frame-%03d.webp`)
+        .outputOptions(['-vf', 'fps=1', '-q:v', '3'])
+        .output(`${outputDir}/frame-%03d.jpg`)
         .on('end', async () => {
           const frames = await this.getFramePaths(outputDir);
-          return resolve(frames);
+          resolve(frames);
         })
         .on('error', (err) => {
           console.error('extractFrames error:', err);
           reject(err);
         })
         .run();
-    });
-  }
-
-  async overlayImageOnVideo(
-    inputVideo: string,
-    inputImage: string,
-    start: number,
-    end: number,
-    x1: number,
-    y1: number,
-    x2: number,
-    y2: number,
-  ) {
-    const originalVideo = join(process.cwd(), 'public', inputVideo);
-    const originalImage = join(process.cwd(), 'public', inputImage);
-    const name = `${randStr()}-${Date.now()}.mp4`;
-    const output = join(dirname(originalVideo), name);
-
-    return new Promise((resolve, reject) => {
-      ffmpeg()
-        .input(originalVideo)
-        .input(originalImage)
-        .inputOptions(['-loop 1'])
-        .complexFilter([
-          {
-            filter: 'scale',
-            options: {
-              w: x2 - x1,
-              h: y2 - y1,
-            },
-            inputs: '1:v',
-            outputs: 'scaled',
-          },
-          {
-            filter: 'overlay',
-            options: {
-              x: x1,
-              y: y1,
-              enable: `between(t,${start},${end})`,
-            },
-            inputs: ['0:v', 'scaled'],
-            outputs: 'v',
-          },
-        ])
-        .outputOptions(['-map [v]', '-map 0:a?', '-c:v libx264', '-c:a copy', '-shortest'])
-        .on('end', async () => {
-          await unlink(originalVideo);
-          const videoPart = PATH_ROOT_VIDEOS.split('/')[1];
-          const index = output.indexOf(`/${videoPart}/`);
-          resolve(output.slice(index));
-        })
-        .on('error', (err) => {
-          console.error('extract overlay error:', err);
-          reject(err);
-        })
-        .save(output);
     });
   }
 
@@ -145,7 +104,7 @@ export class VideoService {
   async getFramePaths(folderPath: string): Promise<string[]> {
     const files = await readdir(folderPath);
     return files
-      .filter((file) => file.match(/^frame-\d+\.webp$/))
+      .filter((file) => file.match(/^frame-\d+\.jpg$/))
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
       .map((file) => {
         const fullPath = join(folderPath, file);
@@ -169,6 +128,22 @@ export class VideoService {
         }
         const replicaStream = metadata.streams.find((stream: ffmpeg.FfprobeStream) => stream.codec_type === 'audio');
         resolve(Number(replicaStream.duration || metadata.format.duration));
+      });
+    });
+  }
+
+  async getWidthAndHeight(inputPath: string): Promise<MediaInfo> {
+    return new Promise((resolve, reject) => {
+      ffmpeg.ffprobe(inputPath, (err, metadata) => {
+        if (err) {
+          console.error('getMediaMeta error:', err);
+          return reject(err);
+        }
+        const videoStream = metadata.streams.find((stream: ffmpeg.FfprobeStream) => stream.codec_type === 'video');
+        resolve({
+          width: videoStream?.width ?? null,
+          height: videoStream?.height ?? null,
+        });
       });
     });
   }
@@ -233,8 +208,6 @@ export class VideoService {
           '-filter_complex',
           `showwavespic=s=${countFrames * WIDTH_FRAME}x${HEIGHT_FRAME}:colors=0x738697`,
           '-frames:v 1',
-          '-c:v',
-          'libwebp',
         ])
         .output(join(outputPath, WAVE_FORM_FILE))
         .on('end', () => {
@@ -385,7 +358,12 @@ export class VideoService {
    * @param phrases array of phrases
    * @returns link to new video
    */
-  async replacePartAudio(inputVideo: string, inputAudio: string, phrases: Phrase[]): Promise<ReplaceAudioResult> {
+  async replacePartAudio(
+    inputVideo: string,
+    inputAudio: string,
+    phrases: Phrase[] = [],
+    overlays: Overlay[] = [],
+  ): Promise<ReplaceAudioResult> {
     const originalVideo = join(process.cwd(), 'public', inputVideo);
     const originalAudio = join(process.cwd(), 'public', inputAudio);
 
@@ -400,11 +378,17 @@ export class VideoService {
       }),
     );
 
-    // generate segsments
-    const origalDuration = await this.getDuration(originalAudio);
+    // prepare overlays
+    const preparedOverlays = overlays.map((overlay) => ({
+      ...overlay,
+      path: join(process.cwd(), 'public', overlay.inputImage),
+    }));
+
+    // generate audio segments
+    const originalDuration = await this.getDuration(originalAudio);
     const segments: Segment[] = [];
     let cursor = 0;
-    let nextInput = 2; // 0: video, 1: original, next — replace
+    let nextInput = 2; // 0: video, 1: original audio, 2... replacement audios
     for (const replacement of replacements) {
       if (replacement.start > cursor) {
         segments.push({ kind: 'orig', start: cursor, end: replacement.start }); // gap
@@ -413,11 +397,11 @@ export class VideoService {
       cursor = replacement.start + replacement.duration;
       nextInput += 1;
     }
-    if (cursor < origalDuration) {
-      segments.push({ kind: 'orig', start: cursor, end: null }); // end
+    if (cursor < originalDuration) {
+      segments.push({ kind: 'orig', start: cursor, end: null });
     }
 
-    // filters
+    // filters and audio filters
     const complex: any[] = [];
     const concatIns: string[] = [];
     segments.forEach((segment, index) => {
@@ -440,6 +424,40 @@ export class VideoService {
       { filter: 'aresample', options: 'async=1:first_pts=0', inputs: 'aout_raw', outputs: 'aout' },
     );
 
+    // video overlay filters
+    // overlays start after replacement audio inputs
+    const firstOverlayInputIdx = 2 + replacements.length;
+    let videoOutput = '0:v:0';
+
+    preparedOverlays.forEach((overlay, index) => {
+      const overlayInputIdx = firstOverlayInputIdx + index;
+      const scaled = `overlay_scaled_${index}`;
+      const overlaid = `video_overlay_${index}`;
+
+      complex.push(
+        {
+          filter: 'scale',
+          options: { w: overlay.x2 - overlay.x1, h: overlay.y2 - overlay.y1 },
+          inputs: `${overlayInputIdx}:v`,
+          outputs: scaled,
+        },
+        {
+          filter: 'overlay',
+          options: {
+            x: overlay.x1,
+            y: overlay.y1,
+            enable: `between(t,${overlay.start},${overlay.end})`,
+            eof_action: 'pass',
+          },
+          inputs: [videoOutput, scaled],
+          outputs: overlaid,
+        },
+      );
+      videoOutput = overlaid;
+    });
+
+    const hasOverlays = preparedOverlays.length > 0;
+
     // call ffmpeg
     const ext = '.mp4';
     const name = `${randStr()}${ext}`;
@@ -450,17 +468,22 @@ export class VideoService {
       for (const replacement of replacements) {
         ffmpegCommand.input(replacement.path);
       }
+      for (const overlay of preparedOverlays) {
+        ffmpegCommand.input(overlay.path).inputOptions(['-loop 1']);
+      }
+
+      const outputOptions = [
+        hasOverlays ? `-map [${videoOutput}]` : '-map 0:v:0',
+        '-map [aout]',
+        hasOverlays ? '-c:v libx264' : '-c:v copy',
+        '-c:a aac',
+        '-movflags +faststart',
+        '-shortest',
+        '-fflags +genpts',
+      ];
       ffmpegCommand
         .complexFilter(complex)
-        .outputOptions([
-          '-map 0:v:0',
-          '-map [aout]',
-          '-c:v copy',
-          '-c:a aac',
-          '-movflags +faststart',
-          '-shortest',
-          '-fflags +genpts',
-        ])
+        .outputOptions(outputOptions)
         .on('end', async () => {
           // чистим tts файлы
           await Promise.all(replacements.map((replacement) => unlink(replacement.path).catch(() => {})));
@@ -501,6 +524,9 @@ export class VideoService {
     meme.ipAddress = ipAddress;
     meme.deleted = false;
     await this.memeRepository.save(meme);
+
+    // TODO нужно удалить оверлеи
+    // await Promise.all(preparedOverlays.map((overlay) => unlink(overlay.path).catch(() => {})));
 
     // clear tmp files
     await unlink(originalVideo);

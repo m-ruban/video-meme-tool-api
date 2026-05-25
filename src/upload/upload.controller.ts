@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UploadService } from 'src/upload/upload.service';
-import { VideoService, Phrase, PhraseMode } from 'src/video/video.service';
+import { VideoService, Phrase, Overlay, PhraseMode } from 'src/video/video.service';
 import { AuthGuard } from 'src/auth/auth.guard';
 import { FileTypePipe, UploadedFileWithType } from 'src/upload/file-type.pipe';
 
@@ -26,6 +26,7 @@ interface UpdateAudioDto {
   inputVideo: string;
   inputAudio: string;
   phrases: string;
+  overlays: string;
 }
 
 interface UpdateMemeDto {
@@ -57,11 +58,13 @@ export class UploadController {
     const { fullName, fullPath } = info;
     const frames = await this.videoService.extractFrames(fullName, fullPath);
     const duration = await this.videoService.getDuration(fullName);
+    const mediaInfo = await this.videoService.getWidthAndHeight(fullName);
     const audio = await this.videoService.extractAudio(fullName, fullPath);
     const audioMp3 = await this.videoService.extractAudioMp3(fullName, fullPath);
     const waveform = await this.videoService.extractWaveform(fullName, fullPath, frames.length);
     return {
       ...uploadedFile,
+      ...mediaInfo,
       duration,
       audio,
       audioMp3,
@@ -79,17 +82,23 @@ export class UploadController {
 
   @UseGuards(AuthGuard)
   @Post('update-audio')
-  async updateAudio(@Body() { inputVideo, inputAudio, phrases: phrasesRaw }: UpdateAudioDto) {
-    let phrases: Phrase[] = [];
-    try {
-      phrases = JSON.parse(phrasesRaw);
-      if (!Array.isArray(phrases)) {
-        throw new Error();
+  async updateAudio(@Body() { inputVideo, inputAudio, phrases: phrasesRaw, overlays: overlaysRaw }: UpdateAudioDto) {
+    const parseRaw = <T>(raw: string) => {
+      let result: T[] = [];
+      try {
+        result = JSON.parse(raw);
+        if (!Array.isArray(result)) {
+          throw new Error();
+        }
+      } catch {
+        throw new BadRequestException('phrases must be a json array');
+      } finally {
+        return result;
       }
-    } catch {
-      throw new BadRequestException('phrases must be a json array');
-    }
-    return await this.videoService.replacePartAudio(inputVideo, inputAudio, phrases);
+    };
+    const phrases = parseRaw<Phrase>(phrasesRaw);
+    const overlays = parseRaw<Overlay>(overlaysRaw);
+    return await this.videoService.replacePartAudio(inputVideo, inputAudio, phrases, overlays);
   }
 
   @UseGuards(AuthGuard)
