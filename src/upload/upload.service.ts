@@ -31,7 +31,7 @@ export class UploadService {
 
   async processImageFile(file: Express.Multer.File): Promise<ProcessedFile> {
     const dir = dirname(file.path);
-    const ext = '.webp';
+    const ext = '.jpg';
     const newFileBase = Date.now().toString();
     const newFileName = `${newFileBase}${ext}`;
     const newFilePath = join(dir, newFileName);
@@ -42,8 +42,9 @@ export class UploadService {
         width: 350,
         withoutEnlargement: true,
       })
-      .webp({
+      .jpeg({
         quality: 80,
+        mozjpeg: true,
       })
       .toFile(newFilePath);
 
