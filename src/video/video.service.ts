@@ -431,15 +431,24 @@ export class VideoService {
 
     preparedOverlays.forEach((overlay, index) => {
       const overlayInputIdx = firstOverlayInputIdx + index;
+      const width = overlay.x2 - overlay.x1;
+      const height = overlay.y2 - overlay.y1;
       const scaled = `overlay_scaled_${index}`;
+      const cropped = `overlay_cropped_${index}`;
       const overlaid = `video_overlay_${index}`;
 
       complex.push(
         {
           filter: 'scale',
-          options: { w: overlay.x2 - overlay.x1, h: overlay.y2 - overlay.y1 },
+          options: { w: width, h: height, force_original_aspect_ratio: 'increase' },
           inputs: `${overlayInputIdx}:v`,
           outputs: scaled,
+        },
+        {
+          filter: 'crop',
+          options: { w: width, h: height, x: '(iw-ow)/2', y: '(ih-oh)/2' },
+          inputs: scaled,
+          outputs: cropped,
         },
         {
           filter: 'overlay',
@@ -449,7 +458,7 @@ export class VideoService {
             enable: `between(t,${overlay.start},${overlay.end})`,
             eof_action: 'pass',
           },
-          inputs: [videoOutput, scaled],
+          inputs: [videoOutput, cropped],
           outputs: overlaid,
         },
       );
@@ -524,9 +533,6 @@ export class VideoService {
     meme.ipAddress = ipAddress;
     meme.deleted = false;
     await this.memeRepository.save(meme);
-
-    // TODO нужно удалить оверлеи
-    // await Promise.all(preparedOverlays.map((overlay) => unlink(overlay.path).catch(() => {})));
 
     // clear tmp files
     await unlink(originalVideo);
