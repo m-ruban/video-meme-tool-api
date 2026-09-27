@@ -31,6 +31,7 @@ interface UpdateAudioDto {
 
 interface UpdateMemeDto {
   inputVideo: string;
+  originalVideo: string;
 }
 
 @Controller('video')
@@ -103,8 +104,8 @@ export class UploadController {
 
   @UseGuards(AuthGuard)
   @Post('save-meme')
-  async saveMeme(@Body() { inputVideo }: UpdateMemeDto, @Ip() ipAddress: string) {
-    const link = await this.videoService.saveMeme(inputVideo, ipAddress);
+  async saveMeme(@Body() { inputVideo, originalVideo }: UpdateMemeDto, @Ip() ipAddress: string) {
+    const link = await this.videoService.saveMeme(inputVideo, originalVideo, ipAddress);
     return { link };
   }
 }

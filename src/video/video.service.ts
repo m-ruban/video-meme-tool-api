@@ -510,16 +510,18 @@ export class VideoService {
     });
   }
 
-  async saveMeme(inputVideo: string, ipAddress: string): Promise<string> {
-    const originalVideo = join(process.cwd(), 'public', inputVideo);
+  async saveMeme(_inputVideo: string, _originalVideo: string, ipAddress: string): Promise<string> {
+    const originalVideo = join(process.cwd(), 'public', _originalVideo);
     const tmpPath = removeSuffix(originalVideo, '.mp4');
+
     const danas = new Date().toISOString().slice(0, 10);
     const outputDirectory = join(FULL_PATH_ROOT_VIDEOS, `/${danas}`);
     const outputPath = join(outputDirectory, `${randStr()}-${Date.now()}.mp4`);
     checkAndCreatePath(outputDirectory);
 
     // save regular path
-    copyFileSync(originalVideo, outputPath);
+    const inputVideo = join(process.cwd(), 'public', _inputVideo);
+    copyFileSync(inputVideo, outputPath);
 
     // prepare correct video path
     const videoPart = PATH_ROOT_VIDEOS.split('/')[1];
@@ -535,7 +537,6 @@ export class VideoService {
     await this.memeRepository.save(meme);
 
     // clear tmp files
-    // TODO check clear section
     console.log('tmpPath', tmpPath);
     console.log('originalVideo', originalVideo);
     await unlink(originalVideo);
