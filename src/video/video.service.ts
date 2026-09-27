@@ -539,8 +539,8 @@ export class VideoService {
     // clear tmp files
     console.log('tmpPath', tmpPath);
     console.log('originalVideo', originalVideo);
-    await unlink(originalVideo);
     if (PATH_PATTERN.test(tmpPath)) {
+      await unlink(originalVideo);
       await rm(tmpPath, { recursive: true, force: true });
     }
 
