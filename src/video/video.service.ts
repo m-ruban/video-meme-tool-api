@@ -535,6 +535,9 @@ export class VideoService {
     await this.memeRepository.save(meme);
 
     // clear tmp files
+    // TODO check clear section
+    console.log('tmpPath', tmpPath);
+    console.log('originalVideo', originalVideo);
     await unlink(originalVideo);
     if (PATH_PATTERN.test(tmpPath)) {
       await rm(tmpPath, { recursive: true, force: true });
